@@ -1,0 +1,8 @@
+*~
+# mkosi
+mkosi.crt
+mkosi.key
+mkosi.output
+mkosi.cache
+mkosi.sandbox
+mkosi.log

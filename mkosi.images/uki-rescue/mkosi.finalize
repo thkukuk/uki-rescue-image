@@ -1,0 +1,101 @@
+#! /bin/bash
+
+set -e
+
+# Setup configs and services
+echo FONT="eurlatgr.psfu" >> "${BUILDROOT}/etc/vconsole.conf"
+
+KEEP=$(mktemp -d)
+# Create correct filesystem structure
+mkdir -p "${KEEP}${BUILDROOT}"/{dev,etc,mnt,rootfs,proc,sys,usr/lib/modules,usr/{bin,sbin,lib64}}
+ln -sf usr/bin "${KEEP}${BUILDROOT}/bin"
+ln -sf usr/lib "${KEEP}${BUILDROOT}/lib"
+ln -sf usr/lib64 "${KEEP}${BUILDROOT}/lib64"
+ln -sf usr/sbin "${KEEP}${BUILDROOT}/sbin"
+
+# Create mountpoint for tmpfs (sysext iamges)
+mkdir -p "${BUILDROOT}/etc/extensions"
+
+mksquashfs "${BUILDROOT}" "${KEEP}/root.sqfs" -comp xz -all-root
+
+# The real initramfs only needs to be able to loop-mount root.sqfs and
+# switch_root into it, so shrink ${BUILDROOT} down to busybox, its
+# runtime shared libraries, and the loop/squashfs kernel modules.
+# Everything else is already preserved inside root.sqfs.
+
+cp -a --parents "${BUILDROOT}/usr/bin/busybox" "${KEEP}/"
+
+for lib in $(ldd "${BUILDROOT}/usr/bin/busybox" | awk '
+        $2 == "=>" && $3 ~ /^\// { print $3; next }
+        $1 ~ /^\// { print $1 }
+    '); do
+    cp -av --dereference --parents "${BUILDROOT}/${lib#/}" "${KEEP}/"
+done
+
+find "${BUILDROOT}/usr/lib/modules" -type f \( -iname 'loop.ko*' -o -iname 'squashfs.ko*' \) \
+    -exec cp -a --parents {} "${KEEP}/" \;
+
+cp -a --parents "${BUILDROOT}/usr/lib/os-release" "${KEEP}/"
+
+mv "${KEEP}${BUILDROOT}/"* "${KEEP}/"
+rmdir "${KEEP}${BUILDROOT}"
+
+find "${BUILDROOT}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
+# Create structure for minimal initrd mounting squashfs root image
+mkdir -p "${BUILDROOT}"/{dev,etc,mnt,rootfs,proc,sys,usr/lib/modules,usr/{bin,sbin,lib64}}
+ln -sf usr/bin "${BUILDROOT}/bin"
+ln -sf usr/lib "${BUILDROOT}/lib"
+ln -sf usr/lib64 "${BUILDROOT}/lib64"
+ln -sf usr/sbin "${BUILDROOT}/sbin"
+
+zstd -d "${KEEP}"/usr/lib/modules/*/kernel/drivers/block/loop.ko.zst \
+  -o  "${BUILDROOT}/usr/lib/modules/loop.ko"
+
+zstd -d "${KEEP}"/usr/lib/modules/*/kernel/fs/squashfs/squashfs.ko.zst \
+  -o "${BUILDROOT}/usr/lib/modules/squashfs.ko"
+
+rm -rf "${KEEP}/usr/lib/modules"
+
+cp -a "${KEEP}/." "${BUILDROOT}/"
+cp -a "${KEEP}"/root.sqfs "${BUILDROOT}/"
+
+# Create commands using busybox
+for cmd in ls mv sh mount umount switch_root insmod mkdir sleep mknod; do
+  ln -s busybox "${BUILDROOT}/usr/bin/$cmd"
+done
+
+rm -rf "${KEEP}"
+
+cat << 'EOF' > "${BUILDROOT}/init"
+#!/bin/sh
+
+echo "UKI Rescue Init Process"
+
+# Mount essential pseudo-filesystems
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+
+# Load required kernel modules
+insmod /usr/lib/modules/loop.ko
+insmod /usr/lib/modules/squashfs.ko
+
+# Mount the squashfs image
+mount -t squashfs -o loop /root.sqfs /rootfs
+
+if [ -d /.extra/sysext ]; then
+  # Create space for sysext images and move them
+  mount -t tmpfs tmpfs /rootfs/etc/extensions
+  mv /.extra/sysext/* /rootfs/etc/extensions/
+fi
+
+# Clean up pseudo-filesystems
+umount /dev
+umount /sys
+umount /proc
+
+# Switch root and execute the real init inside the squashfs
+exec switch_root /rootfs /usr/lib/systemd/systemd
+EOF
+chmod +x "${BUILDROOT}/init"
