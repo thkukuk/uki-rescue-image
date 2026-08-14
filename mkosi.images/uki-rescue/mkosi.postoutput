@@ -9,10 +9,13 @@ IMAGE_SDBOOT="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}"
 echo "mkosi.postoutput ${IMAGE}" "$@"
 
 SCRIPTS_DIR="scripts"
-BOOTLOADER_DIR="mkosi.output/base"
-
-printenv
-pwd
+# Hack for OBS: it redefines the directories
+if [ -d mkosi.output ]; then
+	MKOSI_OUTPUT="mkosi.output"
+else
+        MKOSI_OUTPUT="/usr/src/packages/OTHER"
+fi
+BOOTLOADER_DIR="${MKOSI_OUTPUT}/base"
 
 # shim + systemd-boot
 echo "Building ${IMAGE_SDBOOT}.img"
@@ -57,9 +60,9 @@ EOF
 	# uki-rescue
 	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${OUTPUTDIR}/${IMAGE}.efi" ::"uki-rescue/uki-rescue.efi"
 	# utilities is optional, can be removed if not enough memory
-	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 mkosi.output/uki-rescue-utilities-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
+	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-utilities-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
 	# all sysext images in an extra directory
-	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 mkosi.output/uki-rescue-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue-sysexts/
+	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue-sysexts/
         # memtest86+
         mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/lib/memtest86/mt86plus.efi" ::memtest86/mt86plus.efi
         mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${TEMPDIR}/memtest86.conf" ::loader/entries/memtest86.conf
@@ -75,4 +78,7 @@ esac
 rm -v "${OUTPUTDIR}/${IMAGE}"
 rm -v "${OUTPUTDIR}/${IMAGE}.initrd"
 rm -v "${OUTPUTDIR}/${IMAGE}.vmlinuz"
-rm -rf "${BOOTLOADER_DIR}"
+# OBS maps that read-only
+if [ -w "${BOOTLOADER_DIR}" ]; then
+	rm -rf "${BOOTLOADER_DIR}" ||:
+fi
