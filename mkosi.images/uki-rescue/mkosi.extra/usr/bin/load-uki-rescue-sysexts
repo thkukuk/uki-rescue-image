@@ -9,6 +9,14 @@ if [ -z "$LOADER_PART" ]; then
 	exit 0
 fi
 
+echo "Waiting for device $LOADER_PART to become available..."
+DEVICE_UNIT=$(systemd-escape -p "$LOADER_PART").device
+if ! systemctl start "$DEVICE_UNIT"; then
+    echo "Error: Timed out waiting for $LOADER_PART" >&2
+    exit 1
+fi
+echo "Device $LOADER_PART is ready!"
+
 # Mount ESP on /efi
 mount "$LOADER_PART" /efi
 
