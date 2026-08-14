@@ -75,8 +75,10 @@ EOF
 	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}/uki-rescue-utilities-${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
 	# all sysext images in an extra directory
 	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue-sysexts/
-        rm -rf "$TEMPDIR"
-        ;;
+	rm -rf "$TEMPDIR"
+	# compress uki-rescue.img
+	xz -z "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"
+	;;
     *)
         echo "Unsupported architecture: '$ARCHITECTURE'" >&2
         echo "No raw disk image will be generated." >&2
