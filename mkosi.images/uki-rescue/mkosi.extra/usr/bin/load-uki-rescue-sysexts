@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -e
+
+LOADER_PART=$(rdii-helper boot --print-loader-partition 2>/dev/null)
+
+# Exit if we are not booted from disk
+if [ -z "$LOADER_PART" ]; then
+	exit 0
+fi
+
+# Mount ESP on /efi
+mount "$LOADER_PART" /efi
+
+# Check if the target directory exists
+if [ ! -d "/efi/uki-rescue-sysexts" ]; then
+	umount /efi
+	exit 0
+fi
+
+mkdir -p /var/lib/extensions
+        
+# Enable nullglob so the loop doesn't run if the directory is empty
+shopt -s nullglob
+FILES=(/efi/uki-rescue-sysexts/*)
+        
+if [ ${#FILES[@]} -eq 0 ]; then
+	umount /efi
+	exit 0
+fi
+
+for img in "${FILES[@]}"; do
+	if [ -f "$img" ]; then
+		ln -sf "$img" /var/lib/extensions/
+	fi
+done
+
+# use refresh, not merge, could be that there are already 
+# active sysext images
+systemd-sysext refresh

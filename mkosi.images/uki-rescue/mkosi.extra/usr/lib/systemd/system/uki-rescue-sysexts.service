@@ -1,0 +1,11 @@
+[Unit]
+Description=Load UKI rescue system extensions from ESP
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/load-uki-rescue-sysexts
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
