@@ -92,6 +92,8 @@ This builds several sub-images defined under `mkosi.images/`:
 The `obs/` directory contains an alternative `mkosi.conf` used to build
 and sign the image on the [openSUSE Build Service](https://build.opensuse.org/).
 
+For Secure Boot a key and certificate is required, it can be created with `mkosi genkey`.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
