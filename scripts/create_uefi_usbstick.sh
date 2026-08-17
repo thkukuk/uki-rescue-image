@@ -4,7 +4,7 @@ set -e
 # Defaults
 IMG_NAME=${1:-"uefi-usbstick.img"}
 TEMP_PART="esp_partition.img" # XXX depend on IMG_NAME
-ESP_SIZE_MB=4096          # 4 GB Size for the partition
+ESP_SIZE_MB=${2:-4096}    # 4 GB Size for the partition
 SECTOR_SIZE=512           # Standard sector size
 START_SECTOR=2048         # Standard 1MB alignment (2048 * 512 = 1MB)
 

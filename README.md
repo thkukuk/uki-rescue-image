@@ -7,13 +7,16 @@ reduces memory usage because the image runs directly from RAM.
 
 ## Boot methods
 
-The UKI is a single EFI binary and can be booted in several ways:
+The UKI (uki-rescue-<version>.<arch>.efi) is a single EFI binary and can be booted in several ways:
 
 - **PXE boot** or **UEFI HTTP Boot**, by pointing the firmware at the
   `.efi` binary directly.
-- From a **USB stick image**, which contains a `systemd-boot` menu with
-  entries for the UKI itself, the plain kernel/initrd, and (on x86-64)
-  memtest86+.
+- From a **USB stick image** (uki-rescue-<version>.<arch>.img), which contains a `systemd-boot` menu with
+  entries for the UKI itself, and (on x86-64) memtest86+.
+
+For systems that are too small to run the full UKI
+(see [Memory requirements](#memory-requirements) below), there is a
+**USB stick image** (uki-rescue-full-<version>.<arch>.img) containing a separate kernel, initrd, all available sysext images and the memtest86+ binary (on x86-64).
 
 ### Secure Boot
 
@@ -23,22 +26,8 @@ Service (OBS) project building this image) must be enrolled into the firmware's
 key database (e.g. via MokManager/shim). Without enrolling the key, Secure
 Boot must be disabled to boot the UKI directly.
 
-### USB stick image
-
-For systems that are too small to run the full UKI (see
-[Memory requirements](#memory-requirements) below), the USB stick image
-offers a `systemd-boot` menu with the following entries:
-
-- **UKI Rescue** — boots the same signed UKI EFI binary described above.
-  Requires the signing key to be enrolled if Secure Boot is enabled and
-  the UKI is not signed with the official openSUSE key.
-- **Rescue Image** — boots the plain kernel and initrd directly, without
-  going through the UKI.
-- **Memtest86+** (x86-64 only) — runs memtest86+ to test system memory.
-
-The **Rescue Image** and **Memtest86+** entries do not require any extra
-Secure Boot key to be enrolled, since the kernel and memtest86.efi binary
-are signed with the official openSUSE key.
+Alternatively, there is the `uki-rescue-<version>.<arch>.img` image for USB sticks.
+It will boot the UKE efi binary chainloading via `shim` and `systemd-boot`.
 
 ## Memory requirements
 

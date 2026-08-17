@@ -4,7 +4,8 @@ set -x
 set -e
 
 IMAGE="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}"
-IMAGE_SDBOOT="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}"
+IMAGE_UKI="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}.img"
+IMAGE_FULL="${IMAGE_ID}-full-${IMAGE_VERSION}.${ARCHITECTURE}.img"
 
 echo "mkosi.postoutput ${IMAGE}" "$@"
 
@@ -18,7 +19,7 @@ fi
 BOOTLOADER_DIR="${MKOSI_OUTPUT}/base"
 
 # shim + systemd-boot
-echo "Building ${IMAGE_SDBOOT}.img"
+echo "Building ${IMAGE_FULL}"
 case $ARCHITECTURE in
     x86-64|arm64)
         KERNEL_VERSION=$(get_kernel_version "${OUTPUTDIR}/${IMAGE}.vmlinuz")
@@ -44,40 +45,48 @@ title Memtest86+
 efi   /memtest86/mt86plus.efi
 EOF
 	fi
-        # create image
-        "${SCRIPTS_DIR}/create_uefi_usbstick.sh" "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"
+        # create images
+        "${SCRIPTS_DIR}/create_uefi_usbstick.sh" "${OUTPUTDIR}/${IMAGE_UKI}" 1024
+	"${SCRIPTS_DIR}/create_uefi_usbstick.sh" "${OUTPUTDIR}/${IMAGE_FULL}"
         # copy files to image
-        mmd -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 EFI EFI/BOOT loader loader/entries "$KERNEL_VERSION" uki-rescue uki-rescue/uki-rescue.efi.extra.d uki-rescue-sysexts
-	if [ "$ARCHITECTURE" == "x86-64" ]; then
-	    mmd -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 memtest86
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/x86_64/shim.efi" ::EFI/BOOT/BOOTX64.EFI
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/x86_64/MokManager.efi" ::EFI/BOOT/MokManager.efi
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/lib/systemd/boot/efi/systemd-bootx64.efi" ::EFI/BOOT/grub.efi
-            # memtest86+
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/lib/memtest86/mt86plus.efi" ::memtest86/mt86plus.efi
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${TEMPDIR}/memtest86.conf" ::loader/entries/memtest86.conf
-	else
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/aarch64/shim.efi" ::EFI/BOOT/BOOTAA64.EFI
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/aarch64/MokManager.efi" ::EFI/BOOT/MokManager.efi
-            mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${BOOTLOADER_DIR}/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" ::EFI/BOOT/grub.efi
-	fi
-        mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${TEMPDIR}/loader.conf" ::loader/loader.conf
-        rm "${TEMPDIR}/loader.conf"
-        mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${TEMPDIR}/rescue-image.conf" ::loader/entries/rescue-image.conf
+        mmd -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 EFI EFI/BOOT loader loader/entries uki-rescue uki-rescue/uki-rescue.efi.extra.d uki-rescue-sysexts
+        mmd -i "${OUTPUTDIR}/${IMAGE_FULL}"@@1048576 EFI EFI/BOOT loader loader/entries "$KERNEL_VERSION" uki-rescue-sysexts
+	for image in "${IMAGE_UKI}" "${IMAGE_FULL}"; do
+	    echo "image = ${image}"
+	    if [ "$ARCHITECTURE" == "x86-64" ]; then
+		mmd -i "${OUTPUTDIR}/${image}"@@1048576 memtest86
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/x86_64/shim.efi" ::EFI/BOOT/BOOTX64.EFI
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/x86_64/MokManager.efi" ::EFI/BOOT/MokManager.efi
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/lib/systemd/boot/efi/systemd-bootx64.efi" ::EFI/BOOT/grub.efi
+		# memtest86+
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/lib/memtest86/mt86plus.efi" ::memtest86/mt86plus.efi
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${TEMPDIR}/memtest86.conf" ::loader/entries/memtest86.conf
+	    else
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/aarch64/shim.efi" ::EFI/BOOT/BOOTAA64.EFI
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/share/efi/aarch64/MokManager.efi" ::EFI/BOOT/MokManager.efi
+		mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${BOOTLOADER_DIR}/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" ::EFI/BOOT/grub.efi
+	    fi
+            mcopy -i "${OUTPUTDIR}/${image}"@@1048576 "${TEMPDIR}/loader.conf" ::loader/loader.conf
+	done
+	rm "${TEMPDIR}/loader.conf"
+	# kernel + initrd
+        mcopy -i "${OUTPUTDIR}/${IMAGE_FULL}"@@1048576 "${TEMPDIR}/rescue-image.conf" ::loader/entries/rescue-image.conf
         rm "${TEMPDIR}/rescue-image.conf"
-        mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${TEMPDIR}/uki-rescue.conf" ::loader/entries/uki-rescue.conf
-        rm "${TEMPDIR}/uki-rescue.conf"
-        mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${OUTPUTDIR}/${IMAGE}.vmlinuz" ::"${KERNEL_VERSION}/linux"
-        mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${OUTPUTDIR}/${IMAGE}.initrd" ::"${KERNEL_VERSION}/initrd"
-	# uki-rescue
-	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${OUTPUTDIR}/${IMAGE}.efi" ::"uki-rescue/uki-rescue.efi"
-	# utilities is optional, can be removed if not enough memory
-	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}/uki-rescue-utilities-${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
+        mcopy -i "${OUTPUTDIR}/${IMAGE_FULL}"@@1048576 "${OUTPUTDIR}/${IMAGE}.vmlinuz" ::"${KERNEL_VERSION}/linux"
+        mcopy -i "${OUTPUTDIR}/${IMAGE_FULL}"@@1048576 "${OUTPUTDIR}/${IMAGE}.initrd" ::"${KERNEL_VERSION}/initrd"
 	# all sysext images in an extra directory
-	mcopy -i "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue-sysexts/
-	rm -rf "$TEMPDIR"
+	mcopy -i "${OUTPUTDIR}/${IMAGE_FULL}"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue-sysexts/
+	# compress uki-rescue-full.img
+	xz -z "${OUTPUTDIR}/${IMAGE_FULL}"
+	# uki-rescue
+        mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${TEMPDIR}/uki-rescue.conf" ::loader/entries/uki-rescue.conf
+        rm "${TEMPDIR}/uki-rescue.conf"
+	mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${OUTPUTDIR}/${IMAGE}.efi" ::"uki-rescue/uki-rescue.efi"
+	# utilities is optional, can be removed if not enough memory
+	mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${MKOSI_OUTPUT}/uki-rescue-utilities-${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
 	# compress uki-rescue.img
-	xz -z "${OUTPUTDIR}/${IMAGE_SDBOOT}.img"
+	xz -z "${OUTPUTDIR}/${IMAGE_UKI}"
+	rm -rf "$TEMPDIR"
 	;;
     *)
         echo "Unsupported architecture: '$ARCHITECTURE'" >&2
