@@ -7,8 +7,9 @@ reduces memory usage because the image runs directly from RAM.
 
 ## Boot methods
 
-The UKI (uki-rescue-<version>.<arch>.efi) is a single EFI binary and can be booted in several ways:
+The UKI (`uki-rescue-<version>.<arch>.efi`) is a single EFI binary and can be booted in several ways:
 
+- The EFI Binary is placed on the EFI System Partition (`[ESP]/EFI/Linux/`) and can be directly executed by the  **UEFI Firmware**.
 - **PXE boot** or **UEFI HTTP Boot**, by pointing the firmware at the
   `.efi` binary directly.
 - From a **USB stick image** (uki-rescue-<version>.<arch>.img), which contains a `systemd-boot` menu with
@@ -16,7 +17,7 @@ The UKI (uki-rescue-<version>.<arch>.efi) is a single EFI binary and can be boot
 
 For systems that are too small to run the full UKI
 (see [Memory requirements](#memory-requirements) below), there is a
-**USB stick image** (uki-rescue-full-<version>.<arch>.img) containing a separate kernel, initrd, all available sysext images and the memtest86+ binary (on x86-64).
+**USB stick image** (`uki-rescue-full-<version>.<arch>.img`) containing a separate kernel, initrd, all available sysext images and the memtest86+ binary (on x86-64).
 
 ### Secure Boot
 
@@ -31,10 +32,13 @@ It will boot the UKE efi binary chainloading via `shim` and `systemd-boot`.
 
 ## Memory requirements
 
-Booting the UKI EFI binary requires at least **2 GB of RAM**, since the
-kernel and initrd are loaded twice in the memory for unpacking them.
-For smaller systems, use the "Rescue Image" boot entry from the USB stick
-instead.
+Booting the UKI EFI binary requires at least **2 GB of RAM**.
+To load and start a Unified Kernel Image (UKI) directly from UEFI, the
+system will temporarily need roughly 3 to 4 times the memory of the
+UKI's file size at the peak of the boot process.
+For smaller systems, use the "Rescue Image" boot entry from the
+`uki-rescue-full-<version>.<arch>.img` USB stick instead. The kernel
+and the initrd are loaded separately.
 
 ## System extensions (sysext)
 
