@@ -32,7 +32,7 @@ for lib in $(ldd "${BUILDROOT}/usr/bin/busybox" | awk '
     cp -av --dereference --parents "${BUILDROOT}/${lib#/}" "${KEEP}/"
 done
 
-find "${BUILDROOT}/usr/lib/modules" -type f \( -iname 'loop.ko*' -o -iname 'squashfs.ko*' \) \
+find "${BUILDROOT}/usr/lib/modules" -type f \( -iname 'loop.ko*' -o -iname 'squashfs.ko*' -o -iname 'overlay.ko*' \) \
     -exec cp -a --parents {} "${KEEP}/" \;
 
 cp -a --parents "${BUILDROOT}/usr/lib/os-release" "${KEEP}/"
@@ -49,11 +49,13 @@ ln -sf usr/lib "${BUILDROOT}/lib"
 ln -sf usr/lib64 "${BUILDROOT}/lib64"
 ln -sf usr/sbin "${BUILDROOT}/sbin"
 
+# uncompress modules for busybox insmod...
 zstd -d "${KEEP}"/usr/lib/modules/*/kernel/drivers/block/loop.ko.zst \
   -o  "${BUILDROOT}/usr/lib/modules/loop.ko"
-
 zstd -d "${KEEP}"/usr/lib/modules/*/kernel/fs/squashfs/squashfs.ko.zst \
   -o "${BUILDROOT}/usr/lib/modules/squashfs.ko"
+zstd -d "${KEEP}"/usr/lib/modules/*/kernel/fs/overlayfs/overlay.ko.zst \
+  -o "${BUILDROOT}/usr/lib/modules/overlay.ko"
 
 rm -rf "${KEEP}/usr/lib/modules"
 
@@ -61,7 +63,7 @@ cp -a "${KEEP}/." "${BUILDROOT}/"
 cp -a "${KEEP}"/root.sqfs "${BUILDROOT}/"
 
 # Create commands using busybox
-for cmd in ls mv sh mount umount switch_root insmod mkdir sleep mknod; do
+for cmd in cat ls mv sh mount umount switch_root insmod mkdir sleep mknod; do
   ln -s busybox "${BUILDROOT}/usr/bin/$cmd"
 done
 
@@ -80,14 +82,25 @@ mount -t devtmpfs devtmpfs /dev
 # Load required kernel modules
 insmod /usr/lib/modules/loop.ko
 insmod /usr/lib/modules/squashfs.ko
+insmod /usr/lib/modules/overlay.ko
 
 # Mount the squashfs image
 mount -t squashfs -o loop /root.sqfs /rootfs
 
+# Create /var early for sysext images and /etc overlay
+mount -t tmpfs tmpfs /rootfs/var
+# Create the required directories
+mkdir -p /rootfs/var/lib/etc-overlay
+mkdir -p /rootfs/var/lib/etc-overlay/upper
+mkdir -p /rootfs/var/lib/etc-overlay/work
+mkdir -p /rootfs/var/lib/extensions
+
+# Make /etc writable
+mount -t overlay overlay -o lowerdir=/rootfs/etc,upperdir=/rootfs/var/lib/etc-overlay/upper,workdir=/rootfs/var/lib/etc-overlay/work /rootfs/etc
+
+# Move sysext images
 if [ -d /.extra/sysext ]; then
-  # Create space for sysext images and move them
-  mount -t tmpfs tmpfs /rootfs/etc/extensions
-  mv /.extra/sysext/* /rootfs/etc/extensions/
+  mv /.extra/sysext/* /rootfs/var/lib/extensions/
 fi
 
 # Clean up pseudo-filesystems
