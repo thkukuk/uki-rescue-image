@@ -1,0 +1,9 @@
+Welcome to the UKI-Rescue system!
+
+You can use:
+
+* setkeymap - change the keyboard layout
+* sysextmgrcli list - list available sysext images
+* sysextmgrcli install <sysext image> - enhance rescue system with sysext images 
+* man - access to https://manpages.opensuse.org is required
+
