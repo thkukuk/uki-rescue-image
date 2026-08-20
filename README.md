@@ -59,6 +59,8 @@ become active:
   images found in `/uki-rescue-sysexts/` on the ESP are picked up by the
   `uki-rescue-sysexts.service` and activated via `systemd-sysext refresh`
   once the system is running. The images are copied to RAM.
+- **In the running rescue system**: a sysext image can be installed at
+  any later time using [sysextmgrcli](https://manpages.opensuse.org/sysextmgrcli).
 
 The image ships a few sysext images out of the box (built from the
 `mkosi.images/` sub-images described below), for example a `utilities`
