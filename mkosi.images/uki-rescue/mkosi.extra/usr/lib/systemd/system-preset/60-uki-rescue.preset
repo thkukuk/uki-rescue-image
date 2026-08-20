@@ -5,6 +5,7 @@ enable rdii-networkd.service
 enable rdii-proxy-setup.service
 enable rdii-ssh-setup.service
 enable uki-rescue-sysexts.service
+enable sysextmgr.socket
 enable systemd-sysext.service
 enable systemd-networkd.service
 enable systemd-networkd-wait-online.service
