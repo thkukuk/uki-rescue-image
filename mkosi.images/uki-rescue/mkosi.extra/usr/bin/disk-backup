@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Validate arguments and root privileges
+if [[ $EUID -ne 0 ]]; then
+    echo "Error: This script must be run as root." >&2
+    exit 1
+fi
+
+if [[ $# -ne 2 ]]; then
+    echo "Usage: $0 <device> <destination_path>"
+    echo "Example: $0 /dev/sda /mnt/external_drive"
+    exit 1
+fi
+
+DEVICE="$1"
+DEST_BASE="$2"
+
+if [[ ! -b "$DEVICE" ]]; then
+    echo "Error: Device $DEVICE is not a valid block device." >&2
+    exit 1
+fi
+
+if [[ ! -d "$DEST_BASE" ]]; then
+    echo "Error: Destination path $DEST_BASE is not a valid directory." >&2
+    exit 1
+fi
+
+# 2. Extract disk info for the directory name
+RAW_MODEL=$(lsblk -d -n -o MODEL "$DEVICE")
+
+# Fallback just in case the disk has no model string (e.g., some virtual drives)
+if [[ -z "$RAW_MODEL" ]]; then
+    RAW_MODEL="UnknownModel"
+fi
+
+# Sanitize the model name: replace non-alphanumeric chars with _, squeeze multiple _, strip edge _
+DISK_MODEL=$(echo "$RAW_MODEL" | sed 's/[^a-zA-Z0-9]/_/g' | sed 's/_\+/_/g' | sed 's/^_\|_$//g')
+
+SIZE_BYTES=$(lsblk -b -d -n -o SIZE "$DEVICE")
+SIZE_GB=$((SIZE_BYTES / 1073741824)) # Calculate GiB
+CURRENT_DATE=$(date +%Y%m%d)
+
+# 3. Create the backup directory
+BACKUP_DIR="${DEST_BASE}/${DISK_MODEL}-${SIZE_GB}GB-${CURRENT_DATE}"
+echo "Creating backup directory: $BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+
+# 4. Backup partition table and UUID metadata
+echo "Backing up partition layout to disk_layout.txt..."
+sfdisk -d "$DEVICE" > "${BACKUP_DIR}/disk_layout.txt"
+
+echo "Backing up filesystem UUIDs to blkid.txt..."
+blkid | grep "^${DEVICE}" > "${BACKUP_DIR}/blkid.txt" || true
+
+# 5. Iterate through all partitions on the disk
+lsblk -p -n -l -o NAME,TYPE,FSTYPE "$DEVICE" | awk '$2=="part" {print $1 ":" $3}' | while IFS= read -r part_info; do
+    PART_DEV="${part_info%%:*}"
+    FSTYPE="${part_info##*:}"
+    PART_NAME=$(basename "$PART_DEV")
+
+    echo "----------------------------------------"
+    
+    # Skip swap, unformatted, or extended partitions
+    if [[ -z "$FSTYPE" ]]; then
+        echo "Skipping $PART_DEV (No filesystem detected / Extended partition)"
+        continue
+    fi
+    if [[ "$FSTYPE" == "swap" ]]; then
+        echo "Skipping $PART_DEV (Swap partition)"
+        continue
+    fi
+
+    # Map Linux filesystem names to partclone extensions
+    PC_FSTYPE="$FSTYPE"
+    [[ "$FSTYPE" == "vfat" ]] && PC_FSTYPE="fat32"
+
+    # Backup the partition if the corresponding partclone tool exists
+    if command -v "partclone.$PC_FSTYPE" >/dev/null 2>&1; then
+        echo "Backing up $PART_DEV ($FSTYPE) using partclone.$PC_FSTYPE..."
+        partclone."$PC_FSTYPE" -c -s "$PART_DEV" | zstd -T0 > "${BACKUP_DIR}/${PART_NAME}.img.zst"
+    else
+        echo "Warning: partclone.$PC_FSTYPE not found! Falling back to raw dd block copy for $PART_DEV..."
+        dd if="$PART_DEV" bs=4M status=progress | zstd -T0 > "${BACKUP_DIR}/${PART_NAME}.dd.zst"
+    fi
+done
+
+echo "----------------------------------------"
+echo "Backup complete! All files saved to: $BACKUP_DIR"

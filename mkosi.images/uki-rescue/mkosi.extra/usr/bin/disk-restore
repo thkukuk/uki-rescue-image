@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Validate arguments and root privileges
+if [[ $EUID -ne 0 ]]; then
+    echo "Error: This script must be run as root." >&2
+    exit 1
+fi
+
+if [[ $# -ne 2 ]]; then
+    echo "Usage: $0 <backup_directory> <target_device>"
+    echo "Example: $0 /mnt/external/WDC_WD10EZEX_1000GB_20260914 /dev/sdb"
+    exit 1
+fi
+
+BACKUP_DIR="$1"
+DEVICE="$2"
+
+if [[ ! -d "$BACKUP_DIR" ]]; then
+    echo "Error: Backup directory $BACKUP_DIR not found." >&2
+    exit 1
+fi
+
+if [[ ! -b "$DEVICE" ]]; then
+    echo "Error: Target device $DEVICE is not a valid block device." >&2
+    exit 1
+fi
+
+# Confirmation warning (Destructive action)
+echo "================================================================="
+echo "WARNING: All data on $DEVICE will be PERMANENTLY DESTROYED!"
+echo "Restoring from: $BACKUP_DIR"
+echo "================================================================="
+read -r -p "Type 'YES' to proceed: " confirm
+if [[ "$confirm" != "YES" ]]; then
+    echo "Aborting."
+    exit 0
+fi
+
+# Restore partition table
+echo "Restoring partition layout to $DEVICE..."
+sfdisk "$DEVICE" < "$BACKUP_DIR"/disk_layout.txt
+
+echo "Reloading partition table..."
+partprobe "$DEVICE"
+sleep 3 # Give the kernel a moment to populate new /dev/ nodes
+
+# Restore data partitions
+for IMG in "$BACKUP_DIR"/*.{img,dd}.zst; do
+    [[ -e "$IMG" ]] || continue
+    FILENAME=$(basename "$IMG")
+    ORIG_PART="${FILENAME%%.*}"
+    
+    # Extract the partition number cleanly (works for sda1 -> 1, and nvme0n1p2 -> 2)
+    PARTN="${ORIG_PART##*[a-zA-Z]}"
+    
+    # Find the corresponding target partition path on the new device
+    TARGET_PART=$(lsblk -p -n -o NAME,PARTN "$DEVICE" | awk -v pn="$PARTN" '$2 == pn {print $1}')
+    
+    if [[ -z "$TARGET_PART" ]]; then
+        echo "Warning: Could not map original partition $ORIG_PART (Partition #$PARTN) to $DEVICE. Skipping $FILENAME."
+        continue
+    fi
+
+    echo "----------------------------------------"
+    if [[ "$IMG" == *.img.zst ]]; then
+        # Try to determine the original filesystem from blkid.txt
+        FSTYPE=""
+        if [[ -f "$BACKUP_DIR/blkid.txt" ]]; then
+            FSTYPE=$(grep "/${ORIG_PART}:" "$BACKUP_DIR/blkid.txt" | grep -o 'TYPE="[^"]*"' | cut -d'"' -f 2 || true)
+        fi
+        
+        PC_FSTYPE="$FSTYPE"
+        [[ "$FSTYPE" == "vfat" ]] && PC_FSTYPE="fat32"
+
+        # Restore using the matched partclone binary, or fallback to the generic restorer
+        if [[ -n "$PC_FSTYPE" ]] && command -v "partclone.$PC_FSTYPE" >/dev/null 2>&1; then
+            echo "Restoring $TARGET_PART ($FSTYPE) from $FILENAME using partclone.$PC_FSTYPE..."
+            zstdcat "$IMG" | partclone."$PC_FSTYPE" -r -o "$TARGET_PART"
+        else
+            echo "Restoring $TARGET_PART from $FILENAME using generic partclone.restore..."
+            zstdcat "$IMG" | partclone.restore -r -o "$TARGET_PART"
+        fi
+
+    elif [[ "$IMG" == *.dd.zst ]]; then
+        echo "Restoring $TARGET_PART (raw block copy) from $FILENAME..."
+        zstdcat "$IMG" | dd of="$TARGET_PART" bs=4M status=progress
+    fi
+done
+
+# Recreate swap partition(s)
+if [[ -f "$BACKUP_DIR/blkid.txt" ]]; then
+    echo "----------------------------------------"
+    echo "Checking for swap partitions to recreate..."
+    grep 'TYPE="swap"' "$BACKUP_DIR/blkid.txt" | while IFS= read -r line; do
+        ORIG_PART_PATH=$(echo "$line" | awk -F':' '{print $1}')
+        ORIG_PART=$(basename "$ORIG_PART_PATH")
+        PARTN="${ORIG_PART##*[a-zA-Z]}"
+        
+        TARGET_PART=$(lsblk -p -n -o NAME,PARTN "$DEVICE" | awk -v pn="$PARTN" '$2 == pn {print $1}')
+        UUID=$(echo "$line" | grep -o 'UUID="[^"]*"' | cut -d'"' -f2 || true)
+        
+        if [[ -n "$TARGET_PART" && -n "$UUID" ]]; then
+            echo "Recreating swap on $TARGET_PART with original UUID $UUID..."
+            mkswap -U "$UUID" "$TARGET_PART"
+        fi
+    done
+fi
+
+echo "----------------------------------------"
+echo "Restore complete! You may now mount the partitions or reboot."
