@@ -3,8 +3,8 @@
 echo "mkosi.postoutput ${IMAGE_ID}" "$@"
 
 if [ -n "${IMAGE_VERSION}" ]; then
-	rm "${OUTPUTDIR}/${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}"
+	rm "${OUTPUTDIR}/${IMAGE_ID}"-*-"${IMAGE_VERSION}.${ARCHITECTURE}"
 else
-	rm "${OUTPUTDIR}/${IMAGE_ID}.${ARCHITECTURE}"
+	rm "${OUTPUTDIR}/${IMAGE_ID}"-*."${ARCHITECTURE}"
 fi
 

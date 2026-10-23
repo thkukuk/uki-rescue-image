@@ -3,9 +3,23 @@
 set -x
 set -e
 
-IMAGE="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}"
-IMAGE_UKI="${IMAGE_ID}-${IMAGE_VERSION}.${ARCHITECTURE}.img"
-IMAGE_FULL="${IMAGE_ID}-full-${IMAGE_VERSION}.${ARCHITECTURE}.img"
+printenv
+ls -alF "${OUTPUTDIR}/"
+
+# The Output= pattern (set via uki-version) is "%i-<version>-%v.%a", but
+# <version> isn't exposed to this script, so find the actual name mkosi
+# used by matching the .vmlinuz split artifact it always produces.
+shopt -s nullglob
+CANDIDATES=("${OUTPUTDIR}/${IMAGE_ID}"-*-"${IMAGE_VERSION}.${ARCHITECTURE}.vmlinuz")
+shopt -u nullglob
+if [ "${#CANDIDATES[@]}" -ne 1 ]; then
+	echo "Could not uniquely determine mkosi output name for '${IMAGE_ID}' in '${OUTPUTDIR}'" >&2
+	exit 1
+fi
+IMAGE="${CANDIDATES[0]##*/}"
+IMAGE="${IMAGE%.vmlinuz}"
+IMAGE_UKI="${IMAGE}.img"
+IMAGE_FULL="${IMAGE/${IMAGE_ID}-/${IMAGE_ID}-full-}.img"
 
 echo "mkosi.postoutput ${IMAGE}" "$@"
 
@@ -83,7 +97,7 @@ EOF
         rm "${TEMPDIR}/uki-rescue.conf"
 	mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${OUTPUTDIR}/${IMAGE}.efi" ::"uki-rescue/uki-rescue.efi"
 	# utilities is optional, can be removed if not enough memory
-	mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${MKOSI_OUTPUT}/uki-rescue-utilities-${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
+	mcopy -i "${OUTPUTDIR}/${IMAGE_UKI}"@@1048576 "${MKOSI_OUTPUT}"/uki-rescue-utilities-*-"${IMAGE_VERSION}.${ARCHITECTURE}.sysext.raw" ::uki-rescue/uki-rescue.efi.extra.d/
 	# compress uki-rescue.img
 	xz -z "${OUTPUTDIR}/${IMAGE_UKI}"
 	rm -rf "$TEMPDIR"

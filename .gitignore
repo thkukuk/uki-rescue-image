@@ -6,3 +6,5 @@ mkosi.output
 mkosi.cache
 mkosi.sandbox
 mkosi.log
+# only for testing
+mkosi.images/uki-rescue/mkosi.extra/usr/share/sysextmgr/sysextmgr.conf.d/50-uki-rescue-url.conf
